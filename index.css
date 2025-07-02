@@ -1,0 +1,104 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Variables CSS sacrées DOJUKU SHINGI */
+:root {
+  --rouge-shingi: #c62b2b;      /* Rouge de la droiture */
+  --noir-do: #1a1a1a;          /* Noir de la voie profonde */  
+  --blanc-juku: #f5f0e1;       /* Blanc de l'école pure */
+  --or-dojuku: #d4af37;        /* Or de la sagesse */
+  --gris-zen: #8d8d8d;         /* Gris de la méditation */
+}
+
+/* Classes CSS personnalisées */
+.kanji-title {
+  font-family: 'Noto Serif JP', serif;
+  font-weight: 700;
+}
+
+.body-text {
+  font-family: 'Sora', sans-serif;
+}
+
+.torii-background {
+  background: linear-gradient(135deg, var(--blanc-juku) 0%, rgba(212, 175, 55, 0.1) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.torii-background::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: radial-gradient(circle at 50% 50%, rgba(198, 43, 43, 0.03) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.falling-leaves {
+  position: fixed;
+  top: -10px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.leaf {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--or-dojuku);
+  border-radius: 0 100% 0 100%;
+  animation: fall linear infinite;
+  transform-origin: center;
+  opacity: 0.6;
+}
+
+@keyframes fall {
+  0% {
+    transform: translateY(-100vh) rotate(0deg);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(100vh) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.kanji-glow {
+  text-shadow: 0 0 20px rgba(198, 43, 43, 0.3);
+}
+
+.impact-badge {
+  background: linear-gradient(45deg, rgba(212, 175, 55, 0.1), rgba(212, 175, 55, 0.2));
+  border: 1px solid var(--or-dojuku);
+}
+
+/* Animations pour les kanjis */
+@keyframes kanji-appear {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.kanji-animate {
+  animation: kanji-appear 1.5s ease-out;
+}
+
+/* Styles pour le torii SVG */
+.torii-svg {
+  filter: drop-shadow(0 4px 8px rgba(198, 43, 43, 0.2));
+}
