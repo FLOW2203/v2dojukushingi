@@ -49,7 +49,7 @@
   "homepage": "https://FLOW2203.github.io/v2dojukushingi",
   "private": true,
   "dependencies": {
-    // vos dépendances existantes
+    
   },
   "scripts": {
     "start": "react-scripts start",
