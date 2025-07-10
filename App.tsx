@@ -14,7 +14,7 @@ function App() {
     </AuthProvider>
   );
 }
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter basename={process.env.PUBLIC_URL}>as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './components/auth/AuthProvider';
 import { Layout } from './components/layout/Layout';
