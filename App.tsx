@@ -1,4 +1,19 @@
-import React from 'react';
+import React from 'react';import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+
+function App() {
+  const { language, changeLanguage } = useLanguage();
+
+  return (
+    <AuthProvider>
+      <Router basename={process.env.PUBLIC_URL}>
+        {/* Votre contenu existant reste identique */}
+        <Route>
+          {/* ... votre code existant ... */}
+        </Route>
+      </Router>
+    </AuthProvider>
+  );
+}
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './components/auth/AuthProvider';
