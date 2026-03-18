@@ -5,7 +5,58 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-export async function saveGameScore(data: {
+// ---------- Auth helpers ----------
+
+export async function getCurrentUser() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.user ?? null;
+}
+
+export async function ensureUserProfile() {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  if (data) return data;
+
+  // Create profile on first login
+  const { data: newUser } = await supabase
+    .from('users')
+    .insert({
+      id: user.id,
+      email: user.email,
+      display_name: user.email?.split('@')[0] || 'Warrior',
+    })
+    .select()
+    .single();
+
+  return newUser;
+}
+
+export async function getUserProfile() {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  return data;
+}
+
+// ---------- Score management ----------
+
+const OFFLINE_SCORES_KEY = 'dojuku_offline_scores';
+const OFFLINE_HONOR_KEY = 'dojuku_offline_honor';
+
+interface ScorePayload {
   game_slug: string;
   score: number;
   honor_earned: number;
@@ -13,51 +64,159 @@ export async function saveGameScore(data: {
   stars: number;
   culture: string;
   duration_seconds: number;
-}) {
-  const { data: session } = await supabase.auth.getSession();
-  if (!session?.session?.user) return null;
+}
+
+export async function saveGameScore(data: ScorePayload) {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    // Offline: save to localStorage
+    const existing = JSON.parse(localStorage.getItem(OFFLINE_SCORES_KEY) || '[]');
+    existing.push({ ...data, played_at: new Date().toISOString() });
+    localStorage.setItem(OFFLINE_SCORES_KEY, JSON.stringify(existing));
+
+    // Update local best scores
+    updateLocalBestScore(data.game_slug, data.score, data.stars);
+    return null;
+  }
 
   const { data: result, error } = await supabase.from('game_scores').insert({
-    user_id: session.session.user.id,
+    user_id: user.id,
     ...data,
     played_at: new Date().toISOString(),
   }).select().single();
 
   if (error) {
     console.error('Error saving score:', error);
-    return null;
+    // Fallback to localStorage on error
+    const existing = JSON.parse(localStorage.getItem(OFFLINE_SCORES_KEY) || '[]');
+    existing.push({ ...data, played_at: new Date().toISOString() });
+    localStorage.setItem(OFFLINE_SCORES_KEY, JSON.stringify(existing));
   }
+
+  updateLocalBestScore(data.game_slug, data.score, data.stars);
   return result;
 }
 
-export async function addHonor(amount: number, source: string, gameSlug?: string) {
-  const { data: session } = await supabase.auth.getSession();
-  if (!session?.session?.user) return null;
+function updateLocalBestScore(gameSlug: string, score: number, stars: number) {
+  const key = `dojuku_best_${gameSlug}`;
+  const existing = JSON.parse(localStorage.getItem(key) || '{"score":0,"stars":0,"plays":0}');
+  localStorage.setItem(key, JSON.stringify({
+    score: Math.max(existing.score, score),
+    stars: Math.max(existing.stars, stars),
+    plays: (existing.plays || 0) + 1,
+  }));
 
-  const userId = session.session.user.id;
+  // Track played games
+  const played = JSON.parse(localStorage.getItem('dojuku_played_games') || '[]');
+  if (!played.includes(gameSlug)) {
+    played.push(gameSlug);
+    localStorage.setItem('dojuku_played_games', JSON.stringify(played));
+  }
+}
+
+export function getLocalBestScore(gameSlug: string): { score: number; stars: number; plays: number } {
+  const key = `dojuku_best_${gameSlug}`;
+  return JSON.parse(localStorage.getItem(key) || '{"score":0,"stars":0,"plays":0}');
+}
+
+export function getPlayedGames(): string[] {
+  return JSON.parse(localStorage.getItem('dojuku_played_games') || '[]');
+}
+
+export function getLocalHonor(): number {
+  return parseInt(localStorage.getItem('dojuku_total_honor') || '0', 10);
+}
+
+// ---------- Honor management ----------
+
+export async function addHonor(amount: number, source: string, gameSlug?: string) {
+  if (amount <= 0) return 0;
+
+  // Always update local honor
+  const currentLocal = getLocalHonor();
+  localStorage.setItem('dojuku_total_honor', String(currentLocal + amount));
+
+  const user = await getCurrentUser();
+  if (!user) {
+    // Offline: queue honor transaction
+    const existing = JSON.parse(localStorage.getItem(OFFLINE_HONOR_KEY) || '[]');
+    existing.push({ amount, source, game_slug: gameSlug || null, created_at: new Date().toISOString() });
+    localStorage.setItem(OFFLINE_HONOR_KEY, JSON.stringify(existing));
+    return amount;
+  }
 
   await supabase.from('honor_transactions').insert({
-    user_id: userId,
+    user_id: user.id,
     amount,
     source,
     game_slug: gameSlug || null,
   });
 
-  const { data: user } = await supabase
+  const { data: userRow } = await supabase
     .from('users')
     .select('honor_points')
-    .eq('id', userId)
+    .eq('id', user.id)
     .single();
 
-  if (user) {
+  if (userRow) {
+    const newHonor = userRow.honor_points + amount;
     await supabase
       .from('users')
-      .update({ honor_points: user.honor_points + amount })
-      .eq('id', userId);
+      .update({ honor_points: newHonor, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+
+    localStorage.setItem('dojuku_total_honor', String(newHonor));
   }
 
   return amount;
 }
+
+// ---------- Sync offline data ----------
+
+export async function syncOfflineData() {
+  const user = await getCurrentUser();
+  if (!user) return;
+
+  // Sync scores
+  const offlineScores = JSON.parse(localStorage.getItem(OFFLINE_SCORES_KEY) || '[]');
+  if (offlineScores.length > 0) {
+    for (const scoreData of offlineScores) {
+      await supabase.from('game_scores').insert({
+        user_id: user.id,
+        ...scoreData,
+      });
+    }
+    localStorage.removeItem(OFFLINE_SCORES_KEY);
+  }
+
+  // Sync honor
+  const offlineHonor = JSON.parse(localStorage.getItem(OFFLINE_HONOR_KEY) || '[]');
+  if (offlineHonor.length > 0) {
+    for (const tx of offlineHonor) {
+      await supabase.from('honor_transactions').insert({
+        user_id: user.id,
+        ...tx,
+      });
+    }
+    const totalHonor = offlineHonor.reduce((sum: number, t: { amount: number }) => sum + t.amount, 0);
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('honor_points')
+      .eq('id', user.id)
+      .single();
+
+    if (userRow) {
+      await supabase
+        .from('users')
+        .update({ honor_points: userRow.honor_points + totalHonor })
+        .eq('id', user.id);
+    }
+    localStorage.removeItem(OFFLINE_HONOR_KEY);
+  }
+}
+
+// ---------- Data queries ----------
 
 export async function getTechniques(culture?: string) {
   let query = supabase.from('techniques').select('*');
@@ -66,31 +225,87 @@ export async function getTechniques(culture?: string) {
   return data || [];
 }
 
-export async function getQuizQuestions() {
-  const { data } = await supabase.from('quiz_questions').select('*');
+export async function getQuizQuestions(culture?: string) {
+  let query = supabase.from('quiz_questions').select('*');
+  if (culture) query = query.eq('culture', culture);
+  const { data } = await query;
   return data || [];
 }
 
-export async function getLeaderboard(limit = 20) {
+export async function getLeaderboard(limit = 50) {
+  const { data } = await supabase
+    .from('leaderboard')
+    .select('*')
+    .limit(limit);
+  return data || [];
+}
+
+export async function getGameLeaderboard(gameSlug: string, limit = 20) {
   const { data } = await supabase
     .from('game_scores')
-    .select('user_id, score, game_slug, played_at')
+    .select('user_id, score, max_combo, stars, played_at')
+    .eq('game_slug', gameSlug)
     .order('score', { ascending: false })
     .limit(limit);
   return data || [];
 }
 
 export async function getUserBestScores(gameSlug: string) {
-  const { data: session } = await supabase.auth.getSession();
-  if (!session?.session?.user) return [];
+  const user = await getCurrentUser();
+  if (!user) return [];
 
   const { data } = await supabase
     .from('game_scores')
     .select('*')
-    .eq('user_id', session.session.user.id)
+    .eq('user_id', user.id)
     .eq('game_slug', gameSlug)
     .order('score', { ascending: false })
     .limit(5);
 
+  return data || [];
+}
+
+export async function getUserStats() {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const { data: scores } = await supabase
+    .from('game_scores')
+    .select('game_slug, score, stars, culture')
+    .eq('user_id', user.id);
+
+  if (!scores) return null;
+
+  const uniqueGames = new Set(scores.map(s => s.game_slug));
+  const uniqueCultures = new Set(scores.map(s => s.culture).filter(Boolean));
+
+  return {
+    totalGames: scores.length,
+    uniqueGames: uniqueGames.size,
+    uniqueCultures: uniqueCultures.size,
+    bestScorePerGame: [...uniqueGames].reduce((acc, slug) => {
+      const gameScores = scores.filter(s => s.game_slug === slug);
+      acc[slug] = Math.max(...gameScores.map(s => s.score));
+      return acc;
+    }, {} as Record<string, number>),
+  };
+}
+
+export async function getUserAchievements() {
+  const user = await getCurrentUser();
+  if (!user) return [];
+
+  const { data } = await supabase
+    .from('achievements')
+    .select('achievement_key, unlocked_at')
+    .eq('user_id', user.id);
+
+  return data || [];
+}
+
+export async function getAchievementDefinitions() {
+  const { data } = await supabase
+    .from('achievement_definitions')
+    .select('*');
   return data || [];
 }
