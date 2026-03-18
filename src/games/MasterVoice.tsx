@@ -4,7 +4,7 @@ import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
 import { type Culture, CULTURE_CONFIG } from '../types/game';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 interface Quote {
   text: string;
@@ -42,16 +42,12 @@ function shuffle<T>(arr: T[]): T[] {
 const CULTURES: Culture[] = ['japan', 'china', 'korea', 'vietnam', 'brazil'];
 
 export default function MasterVoice() {
+  const { score, combo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('master-voice');
   const [started, setStarted] = useState(false);
   const [quotes] = useState(() => shuffle(QUOTES).slice(0, 15));
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [answered, setAnswered] = useState(false);
   const [selected, setSelected] = useState<Culture | null>(null);
 
@@ -62,34 +58,28 @@ export default function MasterVoice() {
     setAnswered(true);
     setSelected(culture);
     const correct = culture === quote.culture;
-    const pts = correct ? 15 : 0;
-    const honorPts = correct ? 10 : 0;
 
     if (correct) {
       Sound.correct();
-      setCombo(p => { const n = p + 1; if (n > maxCombo) setMaxCombo(n); return n; });
+      addScore(15);
+      setPopupScore(15);
+      setShowPopup(true);
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
     }
-
-    setScore(p => p + pts);
-    setHonor(p => p + honorPts);
-    if (pts > 0) { setPopupScore(pts); setShowPopup(true); }
 
     setTimeout(() => {
       const next = currentIndex + 1;
       if (next >= quotes.length) {
-        setGameOver(true);
-        saveGameScore({ game_slug: 'master-voice', score: score + pts, honor_earned: honor + honorPts, max_combo: Math.max(maxCombo, combo + (correct ? 1 : 0)), stars: (score + pts) >= 180 ? 3 : (score + pts) >= 90 ? 2 : 1, culture: 'japan', duration_seconds: 120 });
-        addHonor(honor + honorPts, 'game', 'master-voice');
+        endGame();
       } else {
         setCurrentIndex(next);
         setAnswered(false);
         setSelected(null);
       }
     }, 1200);
-  }, [answered, quote, currentIndex, combo, maxCombo, quotes.length, score, honor]);
+  }, [answered, quote, currentIndex, quotes.length, addScore, breakCombo, endGame]);
 
   if (!started) {
     return (
@@ -105,16 +95,16 @@ export default function MasterVoice() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 180 ? 3 : score >= 90 ? 2 : 1} gameName="Master Voice" gameSlug="master-voice"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setCombo(0); setMaxCombo(0); setCurrentIndex(0); setGameOver(false); setAnswered(false); setSelected(null); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 180 ? 3 : score >= 90 ? 2 : 1} gameName="Master Voice" gameSlug="master-voice"
+        onReplay={() => { reset(); setStarted(false); setCurrentIndex(0); setAnswered(false); setSelected(null); }}
       />
     );
   }
 
   return (
-    <GameShell culture={quote.culture} gameName="Master Voice" score={score} honorPoints={honor}>
+    <GameShell culture={quote.culture} gameName="Master Voice" score={score} honorPoints={honorEarned}>
       <div className="flex flex-col items-center gap-5">
         <p className="font-mono text-sm text-dojuku-gold">{currentIndex + 1}/{quotes.length}</p>
         {combo >= 3 && <div className="animate-ki-energy rounded-full px-3 py-1 font-mono text-xs text-dojuku-gold">STREAK ×{combo}</div>}

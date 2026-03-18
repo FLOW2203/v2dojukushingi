@@ -4,7 +4,7 @@ import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
 import { CULTURE_CONFIG, type Culture } from '../types/game';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 interface SortItem {
   id: number;
@@ -38,12 +38,11 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export default function TechniqueSort() {
+  const { score, honorEarned, isGameOver, addScore, endGame, reset } = useGameEngine('technique-sort');
+
   const [started, setStarted] = useState(false);
   const [mode, setMode] = useState<SortMode>('difficulty');
   const [items, setItems] = useState<SortItem[]>([]);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
   const dragItem = useRef<number | null>(null);
@@ -53,9 +52,7 @@ export default function TechniqueSort() {
     setMode(m);
     setItems(shuffle(ITEMS.slice(0, 8)));
     setStarted(true);
-    setScore(0);
-    setHonor(0);
-    setGameOver(false);
+    reset();
   };
 
   const handleDragStart = (index: number) => {
@@ -101,9 +98,7 @@ export default function TechniqueSort() {
     }
 
     const points = correct * 15;
-    const honorPts = correct * 5;
-    setScore(points);
-    setHonor(honorPts);
+    addScore(points);
     setPopupScore(points);
     setShowPopup(true);
 
@@ -114,11 +109,9 @@ export default function TechniqueSort() {
     }
 
     setTimeout(() => {
-      setGameOver(true);
-      saveGameScore({ game_slug: 'technique-sort', score: points, honor_earned: honorPts, max_combo: correct, stars: correct >= 7 ? 3 : correct >= 5 ? 2 : 1, culture: 'japan', duration_seconds: 60 });
-      addHonor(honorPts, 'game', 'technique-sort');
+      endGame();
     }, 800);
-  }, [items, mode]);
+  }, [items, mode, addScore, endGame]);
 
   if (!started) {
     return (
@@ -139,16 +132,16 @@ export default function TechniqueSort() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 105 ? 3 : score >= 75 ? 2 : 1} gameName="Technique Sort" gameSlug="technique-sort"
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 105 ? 3 : score >= 75 ? 2 : 1} gameName="Technique Sort" gameSlug="technique-sort"
         onReplay={() => setStarted(false)}
       />
     );
   }
 
   return (
-    <GameShell culture="japan" gameName="Technique Sort" score={score} honorPoints={honor}>
+    <GameShell culture="japan" gameName="Technique Sort" score={score} honorPoints={honorEarned}>
       <div className="flex flex-col items-center gap-4">
         <p className="font-dm text-sm text-dojuku-paper/60">
           Sort by {mode === 'difficulty' ? 'difficulty (easy → hard)' : 'culture (🇯🇵→🇨🇳→🇰🇷→🇻🇳→🇧🇷)'}

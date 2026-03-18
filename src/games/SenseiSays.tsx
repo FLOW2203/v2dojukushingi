@@ -3,7 +3,7 @@ import GameShell from '../components/games/GameShell';
 import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 const TECHNIQUES = [
   'Roundhouse Kick', 'Front Punch', 'High Block', 'Side Kick',
@@ -32,25 +32,22 @@ function generateCommands(count: number): Command[] {
 }
 
 export default function SenseiSays() {
+  const { score, combo, maxCombo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('sensei-says');
+
   const [started, setStarted] = useState(false);
   const [commands, setCommands] = useState<Command[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
   const [errors, setErrors] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
   const [timeLeft, setTimeLeft] = useState(5);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [masterExpr, setMasterExpr] = useState<'neutral' | 'bravo' | 'correction'>('neutral');
 
   const current = commands[currentIndex];
 
   useEffect(() => {
-    if (!started || gameOver || !current) return;
+    if (!started || isGameOver || !current) return;
     if (timeLeft <= 0) {
       if (current.isSenseiSays) {
         handleAction(false);
@@ -61,59 +58,47 @@ export default function SenseiSays() {
     }
     const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
     return () => clearTimeout(t);
-  }, [timeLeft, started, gameOver, current]);
+  }, [timeLeft, started, isGameOver, current]);
 
   const start = () => {
+    reset();
     setCommands(generateCommands(20));
     setStarted(true);
     setCurrentIndex(0);
-    setScore(0);
-    setHonor(0);
     setErrors(0);
-    setCombo(0);
-    setMaxCombo(0);
-    setGameOver(false);
     setTimeLeft(5);
   };
 
   const handleAction = useCallback((acted: boolean) => {
-    if (!current || gameOver) return;
+    if (!current || isGameOver) return;
 
     const correct = current.isSenseiSays ? acted : !acted;
-    const points = correct ? 10 * (1 + Math.min(combo, 4)) : 0;
-    const honorPts = correct ? 10 : 0;
 
     if (correct) {
       Sound.correct();
-      setCombo(p => { const n = p + 1; if (n > maxCombo) setMaxCombo(n); return n; });
+      addScore(10);
       setFeedback(acted ? 'Correct action!' : 'Good — trap avoided!');
       setMasterExpr('bravo');
+      setPopupScore(10);
+      setShowPopup(true);
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
       const newErrors = errors + 1;
       setErrors(newErrors);
       setFeedback(acted ? 'Trap! Sensei didn\'t say!' : 'You should have acted!');
       setMasterExpr('correction');
 
       if (newErrors >= 3) {
-        setGameOver(true);
-        saveGameScore({ game_slug: 'sensei-says', score: score + points, honor_earned: honor + honorPts, max_combo: Math.max(maxCombo, combo + (correct ? 1 : 0)), stars: score + points >= 150 ? 3 : score + points >= 80 ? 2 : 1, culture: 'japan', duration_seconds: 60 });
-        addHonor(honor + honorPts, 'game', 'sensei-says');
+        endGame();
         return;
       }
     }
 
-    setScore(p => p + points);
-    setHonor(p => p + honorPts);
-    if (points > 0) { setPopupScore(points); setShowPopup(true); }
-
     setTimeout(() => {
       const next = currentIndex + 1;
       if (next >= commands.length) {
-        setGameOver(true);
-        saveGameScore({ game_slug: 'sensei-says', score: score + points, honor_earned: honor + honorPts, max_combo: Math.max(maxCombo, combo + (correct ? 1 : 0)), stars: score + points >= 150 ? 3 : score + points >= 80 ? 2 : 1, culture: 'japan', duration_seconds: 60 });
-        addHonor(honor + honorPts, 'game', 'sensei-says');
+        endGame();
       } else {
         setCurrentIndex(next);
         setTimeLeft(5);
@@ -121,7 +106,7 @@ export default function SenseiSays() {
         setFeedback('');
       }
     }, 1000);
-  }, [current, gameOver, combo, maxCombo, errors, currentIndex, commands.length, score, honor]);
+  }, [current, isGameOver, errors, currentIndex, commands.length, addScore, breakCombo, endGame]);
 
   if (!started) {
     return (
@@ -137,9 +122,9 @@ export default function SenseiSays() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 150 ? 3 : score >= 80 ? 2 : 1} gameName="Sensei Says" gameSlug="sensei-says"
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 150 ? 3 : score >= 80 ? 2 : 1} gameName="Sensei Says" gameSlug="sensei-says"
         onReplay={start}
       />
     );
@@ -148,7 +133,7 @@ export default function SenseiSays() {
   if (!current) return null;
 
   return (
-    <GameShell culture="japan" gameName="Sensei Says" score={score} honorPoints={honor} timeLeft={timeLeft} maxTime={5} masterMessage={feedback} masterExpression={masterExpr}>
+    <GameShell culture="japan" gameName="Sensei Says" score={score} honorPoints={honorEarned} timeLeft={timeLeft} maxTime={5} masterMessage={feedback} masterExpression={masterExpr}>
       <div className="flex flex-col items-center gap-6">
         <div className="flex gap-1">
           {[0, 1, 2].map(i => (

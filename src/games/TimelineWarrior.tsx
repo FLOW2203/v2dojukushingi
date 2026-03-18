@@ -3,7 +3,7 @@ import GameShell from '../components/games/GameShell';
 import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 interface TimelineItem {
   id: number;
@@ -35,22 +35,18 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export default function TimelineWarrior() {
+  const { score, honorEarned, isGameOver, addScore, endGame, reset } = useGameEngine('timeline-warrior');
   const [started, setStarted] = useState(false);
   const [items, setItems] = useState<TimelineItem[]>([]);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
   const dragItem = useRef<number | null>(null);
   const dragOver = useRef<number | null>(null);
 
   const start = () => {
+    reset();
     setItems(shuffle(ITEMS));
     setStarted(true);
-    setScore(0);
-    setHonor(0);
-    setGameOver(false);
   };
 
   const handleDragStart = (index: number) => { dragItem.current = index; };
@@ -82,10 +78,12 @@ export default function TimelineWarrior() {
       if (items[i].id === sorted[i].id) correct++;
     }
 
+    // Add score for each correct placement
+    for (let i = 0; i < correct; i++) {
+      addScore(15);
+    }
+
     const pts = correct * 15;
-    const honorPts = correct * 5;
-    setScore(pts);
-    setHonor(honorPts);
     setPopupScore(pts);
     setShowPopup(true);
 
@@ -93,11 +91,10 @@ export default function TimelineWarrior() {
     else Sound.correct();
 
     setTimeout(() => {
-      setGameOver(true);
-      saveGameScore({ game_slug: 'timeline-warrior', score: pts, honor_earned: honorPts, max_combo: correct, stars: correct >= 9 ? 3 : correct >= 6 ? 2 : 1, culture: 'japan', duration_seconds: 90 });
-      addHonor(honorPts, 'game', 'timeline-warrior');
+      const accuracy = Math.round((correct / items.length) * 100);
+      endGame(accuracy);
     }, 800);
-  }, [items]);
+  }, [items, addScore, endGame]);
 
   if (!started) {
     return (
@@ -113,16 +110,16 @@ export default function TimelineWarrior() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 135 ? 3 : score >= 90 ? 2 : 1} gameName="Timeline Warrior" gameSlug="timeline-warrior"
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 135 ? 3 : score >= 90 ? 2 : 1} gameName="Timeline Warrior" gameSlug="timeline-warrior"
         onReplay={start}
       />
     );
   }
 
   return (
-    <GameShell culture="japan" gameName="Timeline Warrior" score={score} honorPoints={honor}>
+    <GameShell culture="japan" gameName="Timeline Warrior" score={score} honorPoints={honorEarned}>
       <div className="flex flex-col items-center gap-3">
         <p className="font-dm text-sm text-dojuku-paper/60">Sort from oldest to newest</p>
 

@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   display_name TEXT,
   belt_level INTEGER DEFAULT 0 CHECK (belt_level BETWEEN 0 AND 6),
   honor_points INTEGER DEFAULT 0,
+  games_played INTEGER DEFAULT 0,
   streak_days INTEGER DEFAULT 0,
   preferred_culture TEXT CHECK (preferred_culture IN ('japan','china','korea','vietnam','brazil')),
   created_at TIMESTAMPTZ DEFAULT now(),

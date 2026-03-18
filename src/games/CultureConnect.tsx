@@ -3,7 +3,7 @@ import GameShell from '../components/games/GameShell';
 import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 interface Row {
   technique: string;
@@ -32,15 +32,13 @@ function shuffle<T>(arr: T[]): T[] {
 type Column = 'technique' | 'country' | 'master' | 'character';
 
 export default function CultureConnect() {
+  const { score, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('culture-connect');
   const [started, setStarted] = useState(false);
   const [selected, setSelected] = useState<{ col: Column; idx: number } | null>(null);
   const [connections, setConnections] = useState<Map<string, number>>(new Map());
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
   const [errors, setErrors] = useState(0);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
 
   const [shuffled] = useState(() => ({
     technique: DATA.map((d, i) => ({ value: d.technique, row: i })),
@@ -50,7 +48,7 @@ export default function CultureConnect() {
   }));
 
   const handleSelect = useCallback((col: Column, idx: number, row: number) => {
-    if (gameOver) return;
+    if (isGameOver) return;
 
     if (!selected) {
       setSelected({ col, idx });
@@ -75,27 +73,28 @@ export default function CultureConnect() {
         next.set(key2, row);
         return next;
       });
-      setScore(p => p + 20);
-      setHonor(p => p + 10);
+      addScore(20);
       setPopupScore(20);
       setShowPopup(true);
 
       const totalConnected = connections.size / 2 + 1;
       if (totalConnected >= DATA.length * 3) {
         setTimeout(() => {
-          setGameOver(true);
-          const finalScore = score + 20 + (errors === 0 ? 50 : 0);
-          saveGameScore({ game_slug: 'culture-connect', score: finalScore, honor_earned: honor + 10 + (errors === 0 ? 25 : 0), max_combo: 0, stars: errors === 0 ? 3 : errors <= 2 ? 2 : 1, culture: 'japan', duration_seconds: 120 });
-          addHonor(honor + 10 + (errors === 0 ? 25 : 0), 'game', 'culture-connect');
+          // Bonus for no errors
+          if (errors === 0) {
+            addScore(50);
+          }
+          endGame();
         }, 500);
       }
     } else {
       Sound.wrong();
+      breakCombo();
       setErrors(p => p + 1);
     }
 
     setSelected(null);
-  }, [selected, shuffled, connections, gameOver, score, honor, errors]);
+  }, [selected, shuffled, connections, isGameOver, errors, addScore, breakCombo, endGame]);
 
   const isConnected = (col: Column, idx: number) => connections.has(`${col}-${idx}`);
 
@@ -113,11 +112,10 @@ export default function CultureConnect() {
     );
   }
 
-  if (gameOver) {
-    const finalScore = score + (errors === 0 ? 50 : 0);
+  if (isGameOver) {
     return (
-      <GameOverScreen score={finalScore} honorEarned={honor} stars={errors === 0 ? 3 : errors <= 2 ? 2 : 1} gameName="Culture Connect" gameSlug="culture-connect"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setErrors(0); setGameOver(false); setConnections(new Map()); setSelected(null); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={errors === 0 ? 3 : errors <= 2 ? 2 : 1} gameName="Culture Connect" gameSlug="culture-connect"
+        onReplay={() => { reset(); setStarted(false); setErrors(0); setConnections(new Map()); setSelected(null); }}
       />
     );
   }
@@ -130,7 +128,7 @@ export default function CultureConnect() {
   ];
 
   return (
-    <GameShell culture="japan" gameName="Culture Connect" score={score} honorPoints={honor}>
+    <GameShell culture="japan" gameName="Culture Connect" score={score} honorPoints={honorEarned}>
       <div className="flex flex-col items-center gap-3">
         <p className="font-dm text-xs text-dojuku-paper/40">Tap two items from different columns to connect</p>
         {errors > 0 && <p className="font-mono text-xs text-dojuku-red">{errors} errors</p>}

@@ -3,7 +3,7 @@ import GameShell from '../components/games/GameShell';
 import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 const VN_TERMS = [
   'Việt Võ Đạo', 'Vovinam', 'đấm', 'đá', 'chặt', 'gạt', 'đỡ', 'né', 'thế', 'quyền',
@@ -21,16 +21,13 @@ const TONES = [
 ];
 
 export default function ChuVo() {
+  const { score, combo, maxCombo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('chu-vo');
+
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [input, setInput] = useState('');
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [masterMsg, setMasterMsg] = useState('');
   const [masterExpr, setMasterExpr] = useState<'neutral' | 'bravo' | 'correction'>('neutral');
 
@@ -39,38 +36,33 @@ export default function ChuVo() {
   const checkAnswer = useCallback(() => {
     const correct = input.trim().toLowerCase() === term.toLowerCase();
     const points = correct ? 100 : 0;
-    const honorPts = correct ? 12 : 0;
 
     if (correct) {
       Sound.correct();
-      setCombo(p => { const n = p + 1; if (n > maxCombo) setMaxCombo(n); return n; });
+      addScore(points);
       setMasterMsg('Xuất sắc! Excellent!');
       setMasterExpr('bravo');
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
       setMasterMsg(`Correct: ${term}`);
       setMasterExpr('correction');
     }
 
-    setScore(p => p + points);
-    setHonor(p => p + honorPts);
     setPopupScore(points);
     setShowPopup(true);
 
     setTimeout(() => {
       const next = currentIndex + 1;
       if (next >= 10) {
-        setGameOver(true);
-        saveGameScore({ game_slug: 'chu-vo', score: score + points, honor_earned: honor + honorPts, max_combo: Math.max(maxCombo, combo + (correct ? 1 : 0)), stars: (score + points) >= 800 ? 3 : (score + points) >= 400 ? 2 : 1, culture: 'vietnam', duration_seconds: 90 });
-        addHonor(honor + honorPts, 'game', 'chu-vo');
+        endGame();
       } else {
         setCurrentIndex(next);
         setInput('');
         setMasterExpr('neutral');
       }
     }, 1200);
-  }, [input, term, currentIndex, score, honor, combo, maxCombo]);
+  }, [input, term, currentIndex, addScore, breakCombo, endGame]);
 
   const addChar = (c: string) => setInput(p => p + c);
   const addTone = (t: string) => {
@@ -93,16 +85,16 @@ export default function ChuVo() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 800 ? 3 : score >= 400 ? 2 : 1} gameName="Chữ Võ" gameSlug="chu-vo"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setCombo(0); setMaxCombo(0); setCurrentIndex(0); setGameOver(false); setInput(''); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 800 ? 3 : score >= 400 ? 2 : 1} gameName="Chữ Võ" gameSlug="chu-vo"
+        onReplay={() => { reset(); setStarted(false); setCurrentIndex(0); setInput(''); }}
       />
     );
   }
 
   return (
-    <GameShell culture="vietnam" gameName="Chữ Võ" score={score} honorPoints={honor} masterMessage={masterMsg} masterExpression={masterExpr}>
+    <GameShell culture="vietnam" gameName="Chữ Võ" score={score} honorPoints={honorEarned} masterMessage={masterMsg} masterExpression={masterExpr}>
       <div className="flex flex-col items-center gap-4">
         <div className="text-center">
           <p className="font-dm text-sm text-dojuku-paper/40 mb-1">Type this term:</p>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Sound } from '../components/games/SoundManager';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 type Phase = 'inhale' | 'hold' | 'exhale';
 
@@ -15,11 +15,11 @@ const CYCLE_DURATION = 14; // 4 + 4 + 6
 
 export default function ZenBreath() {
   const navigate = useNavigate();
+  const { score, addScore, endGame, reset } = useGameEngine('zen-breath');
   const [mode, setMode] = useState<'scored' | 'relax' | null>(null);
   const [phase, setPhase] = useState<Phase>('inhale');
   const [phaseTime, setPhaseTime] = useState(0);
   const [cycles, setCycles] = useState(0);
-  const [score, setScore] = useState(0);
   const [taps, setTaps] = useState(0);
   const [goodTaps, setGoodTaps] = useState(0);
   const [totalTime, setTotalTime] = useState(0);
@@ -77,12 +77,14 @@ export default function ZenBreath() {
     if (gameOver && mode === 'scored') {
       const accuracy = taps > 0 ? Math.round((goodTaps / taps) * 100) : 0;
       const finalScore = accuracy + cycles * 10;
-      const honorPts = Math.round(finalScore / 2);
-      setScore(finalScore);
-      saveGameScore({ game_slug: 'zen-breath', score: finalScore, honor_earned: honorPts, max_combo: cycles, stars: finalScore >= 80 ? 3 : finalScore >= 40 ? 2 : 1, culture: 'japan', duration_seconds: 60 });
-      addHonor(honorPts, 'game', 'zen-breath');
+      // Add the final score via the hook
+      addScore(finalScore);
+      // Use a short delay to let state update before ending
+      setTimeout(() => {
+        endGame(accuracy);
+      }, 50);
     }
-  }, [gameOver, mode, taps, goodTaps, cycles]);
+  }, [gameOver, mode, taps, goodTaps, cycles, addScore, endGame]);
 
   const handleTap = useCallback(() => {
     if (mode !== 'scored' || gameOver) return;
@@ -136,7 +138,7 @@ export default function ZenBreath() {
           <p className="font-dm text-sm text-dojuku-paper/60">{cycles} cycles | {accuracy}% timing accuracy</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => { setMode(null); setGameOver(false); setTaps(0); setGoodTaps(0); setCycles(0); setTotalTime(0); }}
+          <button onClick={() => { reset(); setMode(null); setGameOver(false); setTaps(0); setGoodTaps(0); setCycles(0); setTotalTime(0); }}
             className="rounded-lg px-6 py-3 font-outfit font-semibold text-dojuku-dark min-h-[44px]" style={{ background: 'var(--gradient-fire)' }}>
             Again
           </button>

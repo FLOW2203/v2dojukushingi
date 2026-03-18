@@ -5,7 +5,7 @@ import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
 import { type Culture, CULTURE_CONFIG } from '../types/game';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 const TECHNIQUES = [
   { english: 'Kick', japan: '蹴', china: '踢', korea: '차기', vietnam: 'đá', brazil: 'meia-lua' },
@@ -21,17 +21,14 @@ const GRID_MAP: Record<Culture, 'genkou' | 'tiange' | 'simple' | 'ruled'> = {
 };
 
 export default function CalliFlow() {
+  const { score, combo, maxCombo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('calli-flow');
+
   const [started, setStarted] = useState(false);
   const [techIndex, setTechIndex] = useState(0);
   const [selectedCulture, setSelectedCulture] = useState<Culture | null>(null);
   const [completedCultures, setCompletedCultures] = useState<Set<Culture>>(new Set());
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
-  const [combo, setCombo] = useState(0);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [masterMsg, setMasterMsg] = useState('');
   const [masterExpr, setMasterExpr] = useState<'neutral' | 'bravo' | 'correction' | 'celebration'>('neutral');
 
@@ -40,16 +37,15 @@ export default function CalliFlow() {
   const handleStroke = useCallback((accuracy: number) => {
     if (!selectedCulture) return;
     const points = Math.round(accuracy * 1.5);
-    const honorPts = accuracy >= 70 ? 15 : 0;
 
     if (accuracy >= 70) {
       Sound.correct();
-      setCombo(p => { const n = p + 1; if (n > maxCombo) setMaxCombo(n); return n; });
+      addScore(points);
       setMasterMsg('Beautiful flow across cultures!');
       setMasterExpr('bravo');
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
       setMasterExpr('correction');
     }
 
@@ -60,13 +56,12 @@ export default function CalliFlow() {
     let bonusPts = 0;
     if (newCompleted.size === 5) {
       bonusPts = 50;
+      addScore(bonusPts);
       setMasterMsg('Master of the Five Ways! +50 bonus!');
       setMasterExpr('celebration');
       Sound.levelUp();
     }
 
-    setScore(p => p + points + bonusPts);
-    setHonor(p => p + honorPts + bonusPts);
     setPopupScore(points + bonusPts);
     setShowPopup(true);
 
@@ -75,9 +70,7 @@ export default function CalliFlow() {
         setCompletedCultures(new Set());
         const next = techIndex + 1;
         if (next >= TECHNIQUES.length) {
-          setGameOver(true);
-          saveGameScore({ game_slug: 'calli-flow', score: score + points + bonusPts, honor_earned: honor + honorPts + bonusPts, max_combo: Math.max(maxCombo, combo + 1), stars: (score + points + bonusPts) >= 500 ? 3 : (score + points + bonusPts) >= 250 ? 2 : 1, culture: 'japan', duration_seconds: 120 });
-          addHonor(honor + honorPts + bonusPts, 'game', 'calli-flow');
+          endGame();
           return;
         }
         setTechIndex(next);
@@ -85,7 +78,7 @@ export default function CalliFlow() {
       setSelectedCulture(null);
       setMasterExpr('neutral');
     }, 1000);
-  }, [selectedCulture, completedCultures, techIndex, score, honor, combo, maxCombo]);
+  }, [selectedCulture, completedCultures, techIndex, addScore, breakCombo, endGame]);
 
   if (!started) {
     return (
@@ -101,16 +94,16 @@ export default function CalliFlow() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 500 ? 3 : score >= 250 ? 2 : 1} gameName="CalliFlow" gameSlug="calli-flow"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setCombo(0); setMaxCombo(0); setTechIndex(0); setGameOver(false); setSelectedCulture(null); setCompletedCultures(new Set()); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 500 ? 3 : score >= 250 ? 2 : 1} gameName="CalliFlow" gameSlug="calli-flow"
+        onReplay={() => { reset(); setStarted(false); setTechIndex(0); setSelectedCulture(null); setCompletedCultures(new Set()); }}
       />
     );
   }
 
   return (
-    <GameShell culture={selectedCulture || 'japan'} gameName="CalliFlow" score={score} honorPoints={honor} masterMessage={masterMsg} masterExpression={masterExpr}>
+    <GameShell culture={selectedCulture || 'japan'} gameName="CalliFlow" score={score} honorPoints={honorEarned} masterMessage={masterMsg} masterExpression={masterExpr}>
       <div className="flex flex-col items-center gap-4">
         <div className="text-center">
           <p className="font-outfit text-2xl font-bold text-dojuku-paper">{tech.english}</p>

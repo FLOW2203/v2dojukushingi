@@ -49,10 +49,12 @@ export default function Profile() {
   }, []);
 
   const handleSignIn = async () => {
+    if (!supabase) return;
     await supabase.auth.signInWithOAuth({ provider: 'google' });
   };
 
   const handleSignOut = async () => {
+    if (!supabase) return;
     await supabase.auth.signOut();
     setProfile(null);
     setIsLoggedIn(false);
