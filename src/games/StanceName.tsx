@@ -5,7 +5,8 @@ import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
 import { type Technique, type Culture } from '../types/game';
-import { saveGameScore, addHonor, getTechniques } from '../lib/supabase';
+import { getTechniques } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -33,20 +34,17 @@ const FALLBACK: Technique[] = [
 ];
 
 export default function StanceName() {
+  const { score, combo, maxCombo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('stance-name');
+
   const [started, setStarted] = useState(false);
   const [level, setLevel] = useState(1);
   const [techniques, setTechniques] = useState<Technique[]>([]);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [current, setCurrent] = useState<Technique | null>(null);
   const [choices, setChoices] = useState<string[]>([]);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
   const [timeLeft, setTimeLeft] = useState(8);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [answered, setAnswered] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
@@ -79,11 +77,11 @@ export default function StanceName() {
   }, [started, techniques, questionIndex, setupQuestion]);
 
   useEffect(() => {
-    if (!started || gameOver || answered) return;
+    if (!started || isGameOver || answered) return;
     if (timeLeft <= 0) { handleAnswer(''); return; }
     const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
     return () => clearTimeout(t);
-  }, [timeLeft, started, gameOver, answered]);
+  }, [timeLeft, started, isGameOver, answered]);
 
   const handleAnswer = useCallback((answer: string) => {
     if (answered || !current) return;
@@ -92,33 +90,28 @@ export default function StanceName() {
 
     const correctAnswer = level >= 3 ? current.name_original : current.name_romanized;
     const correct = answer === correctAnswer;
-    const points = correct ? 10 * (1 + Math.min(combo, 4)) : 0;
-    const honorPts = correct ? 10 : 0;
 
     if (correct) {
       Sound.correct();
-      setCombo(p => { const n = p + 1; if (n > maxCombo) setMaxCombo(n); if (n >= 3) Sound.combo(); return n; });
+      const prevCombo = combo;
+      addScore(10);
+      if (prevCombo + 1 >= 3) Sound.combo();
+      setPopupScore(10);
+      setShowPopup(true);
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
     }
-
-    setScore(p => p + points);
-    setHonor(p => p + honorPts);
-    setPopupScore(points);
-    if (points > 0) setShowPopup(true);
 
     setTimeout(() => {
       const next = questionIndex + 1;
       if (next >= 10) {
-        setGameOver(true);
-        saveGameScore({ game_slug: 'stance-name', score: score + points, honor_earned: honor + honorPts, max_combo: Math.max(maxCombo, combo + (correct ? 1 : 0)), stars: (score + points) >= 80 ? 3 : (score + points) >= 40 ? 2 : 1, culture: 'japan', duration_seconds: 80 });
-        addHonor(honor + honorPts, 'game', 'stance-name');
+        endGame();
       } else {
         setQuestionIndex(next);
       }
     }, 1000);
-  }, [answered, current, level, combo, maxCombo, questionIndex, score, honor]);
+  }, [answered, current, level, combo, questionIndex, addScore, breakCombo, endGame]);
 
   if (!started) {
     return (
@@ -129,7 +122,7 @@ export default function StanceName() {
         </p>
         <div className="flex flex-col gap-3 w-full max-w-xs">
           {[1, 2, 3].map(l => (
-            <button key={l} onClick={() => { setLevel(l); setStarted(true); }}
+            <button key={l} onClick={() => { setLevel(l); setStarted(true); reset(); }}
               className="rounded-lg py-3 font-outfit font-semibold text-dojuku-dark min-h-[44px]"
               style={{ background: 'var(--gradient-fire)' }}>
               {l === 1 ? 'L1: Same Culture' : l === 2 ? 'L2: Mixed Cultures' : 'L3: Original Script'}
@@ -140,10 +133,10 @@ export default function StanceName() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 80 ? 3 : score >= 40 ? 2 : 1} gameName="Stance Name" gameSlug="stance-name"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setCombo(0); setMaxCombo(0); setQuestionIndex(0); setGameOver(false); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 80 ? 3 : score >= 40 ? 2 : 1} gameName="Stance Name" gameSlug="stance-name"
+        onReplay={() => { setStarted(false); reset(); setQuestionIndex(0); }}
       />
     );
   }
@@ -153,7 +146,7 @@ export default function StanceName() {
   const correctAnswer = level >= 3 ? current.name_original : current.name_romanized;
 
   return (
-    <GameShell culture={current.culture as Culture} gameName="Stance Name" score={score} honorPoints={honor} timeLeft={timeLeft} maxTime={8}>
+    <GameShell culture={current.culture as Culture} gameName="Stance Name" score={score} honorPoints={honorEarned} timeLeft={timeLeft} maxTime={8}>
       <div className="flex flex-col items-center gap-4">
         <div className="text-center">
           <p className="font-dm text-xs text-dojuku-paper/40">{questionIndex + 1}/10</p>

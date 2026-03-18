@@ -4,7 +4,7 @@ import CalligraphyCanvas from '../components/games/CalligraphyCanvas';
 import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 const KANJI_SET = [
   { char: '空手', romanized: 'karate', english: 'empty hand' },
@@ -32,65 +32,41 @@ const KANJI_SET = [
 type Mode = 'guided' | 'timed' | 'freestyle';
 
 export default function KanjiStroke() {
+  const { score, combo, maxCombo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('kanji-stroke');
+
   const [mode, setMode] = useState<Mode | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
   const [timeLeft, setTimeLeft] = useState(30);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [masterMsg, setMasterMsg] = useState('Choose your path, student.');
   const [masterExpr, setMasterExpr] = useState<'neutral' | 'bravo' | 'correction' | 'celebration'>('neutral');
 
   const kanji = KANJI_SET[currentIndex % KANJI_SET.length];
 
   useEffect(() => {
-    if (mode !== 'timed' || gameOver) return;
+    if (mode !== 'timed' || isGameOver) return;
     if (timeLeft <= 0) { endGame(); return; }
     const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
     return () => clearTimeout(t);
-  }, [timeLeft, mode, gameOver]);
-
-  const endGame = useCallback(() => {
-    setGameOver(true);
-    saveGameScore({
-      game_slug: 'kanji-stroke',
-      score,
-      honor_earned: honor,
-      max_combo: maxCombo,
-      stars: score >= 200 ? 3 : score >= 100 ? 2 : 1,
-      culture: 'japan',
-      duration_seconds: mode === 'timed' ? 30 : 60,
-    });
-    addHonor(honor, 'game', 'kanji-stroke');
-  }, [score, honor, maxCombo, mode]);
+  }, [timeLeft, mode, isGameOver, endGame]);
 
   const handleStroke = useCallback((accuracy: number) => {
     const points = Math.round(accuracy * (mode === 'freestyle' ? 2 : 1));
-    const honorPts = accuracy >= 70 ? (mode === 'freestyle' ? 20 : 10) : 0;
 
     if (accuracy >= 70) {
       Sound.correct();
-      setCombo(p => {
-        const next = p + 1;
-        if (next > maxCombo) setMaxCombo(next);
-        if (next >= 3) Sound.combo();
-        return next;
-      });
+      addScore(points);
+      if (combo + 1 >= 3) Sound.combo();
       setMasterMsg('Excellent stroke! 素晴らしい!');
       setMasterExpr('bravo');
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
       setMasterMsg('Focus your energy. Try again.');
       setMasterExpr('correction');
     }
 
-    setScore(p => p + points);
-    setHonor(p => p + honorPts);
     setPopupScore(points);
     setShowPopup(true);
 
@@ -99,7 +75,7 @@ export default function KanjiStroke() {
       setMasterExpr('neutral');
       if (mode === 'guided' && currentIndex >= 9) endGame();
     }, 800);
-  }, [mode, maxCombo, currentIndex, endGame]);
+  }, [mode, combo, currentIndex, addScore, breakCombo, endGame]);
 
   const startMode = (m: Mode) => {
     setMode(m);
@@ -131,17 +107,17 @@ export default function KanjiStroke() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
       <GameOverScreen
         score={score}
-        honorEarned={honor}
+        honorEarned={honorEarned}
         stars={score >= 200 ? 3 : score >= 100 ? 2 : 1}
         gameName="Kanji Stroke"
         gameSlug="kanji-stroke"
         onReplay={() => {
-          setMode(null); setScore(0); setHonor(0); setCombo(0); setMaxCombo(0);
-          setCurrentIndex(0); setGameOver(false); setTimeLeft(30);
+          reset();
+          setMode(null); setCurrentIndex(0); setTimeLeft(30);
         }}
       />
     );
@@ -152,7 +128,7 @@ export default function KanjiStroke() {
       culture="japan"
       gameName="Kanji Stroke"
       score={score}
-      honorPoints={honor}
+      honorPoints={honorEarned}
       timeLeft={mode === 'timed' ? timeLeft : undefined}
       maxTime={30}
       masterMessage={masterMsg}

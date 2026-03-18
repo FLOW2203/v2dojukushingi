@@ -3,7 +3,7 @@ import GameShell from '../components/games/GameShell';
 import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 const DOJO_ELEMENTS = [
   { name: 'Tatami Floor', icon: '🟫', unlockAt: 1 },
@@ -32,14 +32,12 @@ const QUESTIONS = [
 ];
 
 export default function DojoBuild() {
+  const { score, honorEarned, isGameOver, addScore, endGame, reset } = useGameEngine('dojo-build');
   const [started, setStarted] = useState(false);
   const [qIndex, setQIndex] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [answered, setAnswered] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
 
@@ -50,15 +48,12 @@ export default function DojoBuild() {
     setAnswered(true);
     setSelected(idx);
     const correct = idx === question.correct;
-    const pts = correct ? 15 : 0;
-    const honorPts = correct ? 10 : 0;
 
     if (correct) {
       Sound.correct();
       setCorrectCount(p => p + 1);
-      setScore(p => p + pts);
-      setHonor(p => p + honorPts);
-      setPopupScore(pts);
+      addScore(15);
+      setPopupScore(15);
       setShowPopup(true);
     } else {
       Sound.wrong();
@@ -67,17 +62,16 @@ export default function DojoBuild() {
     setTimeout(() => {
       const next = qIndex + 1;
       if (next >= QUESTIONS.length) {
-        setGameOver(true);
         const finalCorrect = correctCount + (correct ? 1 : 0);
-        saveGameScore({ game_slug: 'dojo-build', score: score + pts, honor_earned: honor + honorPts, max_combo: finalCorrect, stars: finalCorrect >= 8 ? 3 : finalCorrect >= 5 ? 2 : 1, culture: 'japan', duration_seconds: 120 });
-        addHonor(honor + honorPts, 'game', 'dojo-build');
+        const accuracy = Math.round((finalCorrect / QUESTIONS.length) * 100);
+        endGame(accuracy);
       } else {
         setQIndex(next);
         setAnswered(false);
         setSelected(null);
       }
     }, 1000);
-  }, [answered, question, qIndex, correctCount, score, honor]);
+  }, [answered, question, qIndex, correctCount, addScore, endGame]);
 
   if (!started) {
     return (
@@ -93,16 +87,16 @@ export default function DojoBuild() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={correctCount >= 8 ? 3 : correctCount >= 5 ? 2 : 1} gameName="Dojo Build" gameSlug="dojo-build"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setCorrectCount(0); setQIndex(0); setGameOver(false); setAnswered(false); setSelected(null); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={correctCount >= 8 ? 3 : correctCount >= 5 ? 2 : 1} gameName="Dojo Build" gameSlug="dojo-build"
+        onReplay={() => { reset(); setStarted(false); setCorrectCount(0); setQIndex(0); setAnswered(false); setSelected(null); }}
       />
     );
   }
 
   return (
-    <GameShell culture="japan" gameName="Dojo Build" score={score} honorPoints={honor}>
+    <GameShell culture="japan" gameName="Dojo Build" score={score} honorPoints={honorEarned}>
       <div className="flex flex-col items-center gap-4">
         {/* Dojo visualization */}
         <div className="flex flex-wrap justify-center gap-2 p-3 rounded-xl bg-white/5 border border-white/10 w-full max-w-sm">

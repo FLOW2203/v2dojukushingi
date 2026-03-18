@@ -170,3 +170,24 @@ INSERT INTO quiz_questions (statement_en, is_true, category, culture) VALUES
 ('Meditation is an important part of many martial arts.', true, 'general', NULL),
 ('The belt system was invented in the 20th century.', true, 'history', NULL),
 ('Martial arts training can improve mental discipline.', true, 'general', NULL);
+
+-- ========== ACHIEVEMENT DEFINITIONS ==========
+INSERT INTO achievement_definitions (key, name, description, icon, requirement_type, requirement_value, honor_reward) VALUES
+('first_game', 'First Step', 'Complete your first game', '🥋', 'games_played', 1, 50),
+('ten_games', 'Dedicated Student', 'Complete 10 games', '🔥', 'games_played', 10, 100),
+('fifty_games', 'Warrior Spirit', 'Complete 50 games', '⚔️', 'games_played', 50, 250),
+('hundred_games', 'Grand Master', 'Complete 100 games', '🏆', 'games_played', 100, 500),
+('belt_yellow', 'Yellow Belt', 'Reach Yellow belt', '🟡', 'belt_level', 1, 100),
+('belt_orange', 'Orange Belt', 'Reach Orange belt', '🟠', 'belt_level', 2, 150),
+('belt_green', 'Green Belt', 'Reach Green belt', '🟢', 'belt_level', 3, 200),
+('belt_blue', 'Blue Belt', 'Reach Blue belt', '🔵', 'belt_level', 4, 300),
+('belt_brown', 'Brown Belt', 'Reach Brown belt', '🟤', 'belt_level', 5, 400),
+('belt_black', 'Black Belt', 'Reach Black belt', '⬛', 'belt_level', 6, 1000),
+('perfect_3stars', 'Perfection', 'Get 3 stars on any game', '⭐', 'max_stars', 3, 75),
+('five_cultures', 'World Traveler', 'Play games from all 5 cultures', '🌍', 'cultures_played', 5, 200),
+('combo_5', 'Combo Master', 'Reach a 5x combo', '💥', 'max_combo', 5, 100),
+('combo_10', 'Unstoppable', 'Reach a 10x combo', '🌪️', 'max_combo', 10, 250),
+('writing_master', 'Calligraphy Master', 'Complete all 6 writing games', '✍️', 'writing_games', 6, 200),
+('stance_master', 'Position Master', 'Complete all 6 position games', '🧘', 'stance_games', 6, 200),
+('culture_master', 'Culture Master', 'Complete all 6 culture games', '🎌', 'culture_games', 6, 200),
+('all_games', 'Complete Collection', 'Play all 18 games at least once', '👑', 'unique_games', 18, 500);

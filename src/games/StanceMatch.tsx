@@ -3,7 +3,7 @@ import GameShell from '../components/games/GameShell';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
 import { CULTURE_CONFIG, type Culture } from '../types/game';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 interface Card {
   id: number;
@@ -35,16 +35,16 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export default function StanceMatch() {
+  const { score, honorEarned, isGameOver, addScore, endGame, reset } = useGameEngine('stance-match');
+
   const [started, setStarted] = useState(false);
   const [cards, setCards] = useState<Card[]>([]);
   const [flipped, setFlipped] = useState<number[]>([]);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
   const [pairs, setPairs] = useState(0);
   const [timeLeft, setTimeLeft] = useState(90);
-  const [gameOver, setGameOver] = useState(false);
 
   const initGame = () => {
+    reset();
     const selected = shuffle(PAIRS).slice(0, 6);
     const cardList: Card[] = [];
     selected.forEach((p, i) => {
@@ -54,27 +54,22 @@ export default function StanceMatch() {
     setCards(shuffle(cardList));
     setStarted(true);
     setTimeLeft(90);
-    setScore(0);
-    setHonor(0);
     setPairs(0);
     setFlipped([]);
-    setGameOver(false);
   };
 
   useEffect(() => {
-    if (!started || gameOver) return;
-    if (timeLeft <= 0) { endGame(); return; }
+    if (!started || isGameOver) return;
+    if (timeLeft <= 0) { finishGame(); return; }
     const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
     return () => clearTimeout(t);
-  }, [timeLeft, started, gameOver]);
+  }, [timeLeft, started, isGameOver]);
 
-  const endGame = useCallback(() => {
-    const finalScore = score + (timeLeft * 2);
-    setScore(finalScore);
-    setGameOver(true);
-    saveGameScore({ game_slug: 'stance-match', score: finalScore, honor_earned: honor, max_combo: pairs, stars: pairs >= 6 ? 3 : pairs >= 4 ? 2 : 1, culture: 'japan', duration_seconds: 90 - timeLeft });
-    addHonor(honor, 'game', 'stance-match');
-  }, [score, honor, pairs, timeLeft]);
+  const finishGame = useCallback(() => {
+    // Add time bonus via addScore
+    addScore(timeLeft * 2);
+    endGame();
+  }, [timeLeft, addScore, endGame]);
 
   const handleCardClick = useCallback((id: number) => {
     const card = cards.find(c => c.id === id);
@@ -95,9 +90,8 @@ export default function StanceMatch() {
           setFlipped([]);
           const newPairs = pairs + 1;
           setPairs(newPairs);
-          setScore(p => p + 20);
-          setHonor(p => p + 10);
-          if (newPairs >= 6) endGame();
+          addScore(20);
+          if (newPairs >= 6) finishGame();
         }, 500);
       } else {
         Sound.wrong();
@@ -107,7 +101,7 @@ export default function StanceMatch() {
         }, 800);
       }
     }
-  }, [cards, flipped, pairs, endGame]);
+  }, [cards, flipped, pairs, finishGame, addScore]);
 
   if (!started) {
     return (
@@ -123,16 +117,16 @@ export default function StanceMatch() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={pairs >= 6 ? 3 : pairs >= 4 ? 2 : 1} gameName="Stance Match" gameSlug="stance-match"
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={pairs >= 6 ? 3 : pairs >= 4 ? 2 : 1} gameName="Stance Match" gameSlug="stance-match"
         onReplay={initGame}
       />
     );
   }
 
   return (
-    <GameShell culture="japan" gameName="Stance Match" score={score} honorPoints={honor} timeLeft={timeLeft} maxTime={90}>
+    <GameShell culture="japan" gameName="Stance Match" score={score} honorPoints={honorEarned} timeLeft={timeLeft} maxTime={90}>
       <div className="flex flex-col items-center gap-4">
         <p className="font-mono text-sm text-dojuku-gold">{pairs}/6 pairs found</p>
         <div className="grid grid-cols-3 gap-2 w-full max-w-sm">

@@ -5,7 +5,7 @@ import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
 import { type Culture, CULTURE_CONFIG } from '../types/game';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 interface RaceChar {
   char: string;
@@ -39,29 +39,23 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export default function StrokeRace() {
+  const { score, combo, maxCombo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('stroke-race');
+
   const [started, setStarted] = useState(false);
   const [queue, setQueue] = useState<RaceChar[]>([]);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
   const [timeLeft, setTimeLeft] = useState(60);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
 
   useEffect(() => {
-    if (!started || gameOver) return;
+    if (!started || isGameOver) return;
     if (timeLeft <= 0) {
-      setGameOver(true);
-      const finalHonor = Math.round(score / 10);
-      saveGameScore({ game_slug: 'stroke-race', score, honor_earned: finalHonor, max_combo: maxCombo, stars: score >= 100 ? 3 : score >= 50 ? 2 : 1, culture: 'japan', duration_seconds: 60 });
-      addHonor(finalHonor, 'game', 'stroke-race');
+      endGame();
       return;
     }
     const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
     return () => clearTimeout(t);
-  }, [timeLeft, started, gameOver, score, maxCombo]);
+  }, [timeLeft, started, isGameOver, endGame]);
 
   const start = () => {
     setQueue(shuffle(CHARS));
@@ -76,13 +70,12 @@ export default function StrokeRace() {
 
     if (points > 0) {
       Sound.correct();
-      setCombo(p => { const n = p + 1; if (n > maxCombo) setMaxCombo(n); return n; });
+      addScore(points);
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
     }
 
-    setScore(p => p + points);
     setPopupScore(points);
     setShowPopup(true);
 
@@ -93,7 +86,7 @@ export default function StrokeRace() {
         return next;
       });
     }, 400);
-  }, [queue, maxCombo]);
+  }, [queue, addScore, breakCombo]);
 
   if (!started) {
     return (
@@ -109,11 +102,10 @@ export default function StrokeRace() {
     );
   }
 
-  if (gameOver) {
-    const finalHonor = Math.round(score / 10);
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={finalHonor} stars={score >= 100 ? 3 : score >= 50 ? 2 : 1} gameName="Stroke Race" gameSlug="stroke-race"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setCombo(0); setMaxCombo(0); setGameOver(false); setTimeLeft(60); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 100 ? 3 : score >= 50 ? 2 : 1} gameName="Stroke Race" gameSlug="stroke-race"
+        onReplay={() => { reset(); setStarted(false); setTimeLeft(60); }}
       />
     );
   }
@@ -122,7 +114,7 @@ export default function StrokeRace() {
   if (!current) return null;
 
   return (
-    <GameShell culture={current.culture} gameName="Stroke Race" score={score} honorPoints={honor} timeLeft={timeLeft} maxTime={60}>
+    <GameShell culture={current.culture} gameName="Stroke Race" score={score} honorPoints={honorEarned} timeLeft={timeLeft} maxTime={60}>
       <div className="flex flex-col items-center gap-4">
         <div className="flex items-center gap-3">
           <span className="text-xl">{CULTURE_CONFIG[current.culture].flag}</span>

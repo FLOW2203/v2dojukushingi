@@ -4,7 +4,7 @@ import CalligraphyCanvas from '../components/games/CalligraphyCanvas';
 import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 const HANGUL_SET = [
   { char: '태권도', romanized: 'taekwondo', english: 'way of fist and foot' },
@@ -30,51 +30,39 @@ const HANGUL_SET = [
 ];
 
 export default function HangulDojo() {
+  const { score, combo, maxCombo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('hangul-dojo');
+
   const [started, setStarted] = useState(false);
   const [speedRun, setSpeedRun] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
   const [timeLeft, setTimeLeft] = useState(60);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [masterMsg, setMasterMsg] = useState('');
   const [masterExpr, setMasterExpr] = useState<'neutral' | 'bravo' | 'correction'>('neutral');
 
   useEffect(() => {
-    if (!started || gameOver) return;
+    if (!started || isGameOver) return;
     if (timeLeft <= 0) { endGame(); return; }
     const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
     return () => clearTimeout(t);
-  }, [timeLeft, started, gameOver]);
-
-  const endGame = useCallback(() => {
-    setGameOver(true);
-    saveGameScore({ game_slug: 'hangul-dojo', score, honor_earned: honor, max_combo: maxCombo, stars: score >= 160 ? 3 : score >= 80 ? 2 : 1, culture: 'korea', duration_seconds: 60 - timeLeft });
-    addHonor(honor, 'game', 'hangul-dojo');
-  }, [score, honor, maxCombo, timeLeft]);
+  }, [timeLeft, started, isGameOver, endGame]);
 
   const handleStroke = useCallback((accuracy: number) => {
     const points = Math.round(accuracy * (speedRun ? 1.5 : 1));
-    const honorPts = accuracy >= 60 ? 8 : 0;
 
     if (accuracy >= 60) {
       Sound.correct();
-      setCombo(p => { const n = p + 1; if (n > maxCombo) setMaxCombo(n); return n; });
+      addScore(points);
       setMasterMsg('잘했어요! Well done!');
       setMasterExpr('bravo');
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
       setMasterMsg('다시 해보세요. Try again.');
       setMasterExpr('correction');
     }
 
-    setScore(p => p + points);
-    setHonor(p => p + honorPts);
     setPopupScore(points);
     setShowPopup(true);
 
@@ -84,7 +72,7 @@ export default function HangulDojo() {
       else setCurrentIndex(next);
       setMasterExpr('neutral');
     }, speedRun ? 500 : 800);
-  }, [speedRun, maxCombo, currentIndex, endGame]);
+  }, [speedRun, currentIndex, addScore, breakCombo, endGame]);
 
   if (!started) {
     return (
@@ -106,10 +94,10 @@ export default function HangulDojo() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 160 ? 3 : score >= 80 ? 2 : 1} gameName="Hangul Dojo" gameSlug="hangul-dojo"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setCombo(0); setMaxCombo(0); setCurrentIndex(0); setGameOver(false); setTimeLeft(60); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 160 ? 3 : score >= 80 ? 2 : 1} gameName="Hangul Dojo" gameSlug="hangul-dojo"
+        onReplay={() => { reset(); setStarted(false); setCurrentIndex(0); setTimeLeft(60); }}
       />
     );
   }
@@ -117,7 +105,7 @@ export default function HangulDojo() {
   const hangul = HANGUL_SET[currentIndex % HANGUL_SET.length];
 
   return (
-    <GameShell culture="korea" gameName="Hangul Dojo" score={score} honorPoints={honor}
+    <GameShell culture="korea" gameName="Hangul Dojo" score={score} honorPoints={honorEarned}
       timeLeft={speedRun ? timeLeft : undefined} maxTime={60} masterMessage={masterMsg} masterExpression={masterExpr}>
       <div className="flex flex-col items-center gap-4">
         <div className="text-center">

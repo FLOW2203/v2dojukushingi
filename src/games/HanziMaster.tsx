@@ -1,10 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import GameShell from '../components/games/GameShell';
 import CalligraphyCanvas from '../components/games/CalligraphyCanvas';
 import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 const HANZI_SET = [
   { char: '武术', pinyin: 'wushu', english: 'martial art', kanjiEquiv: '武術' },
@@ -30,60 +30,40 @@ const HANZI_SET = [
 ];
 
 export default function HanziMaster() {
+  const { score, combo, maxCombo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('hanzi-master');
+
   const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
   const [masterMsg, setMasterMsg] = useState('Master Chen awaits your brushwork.');
   const [masterExpr, setMasterExpr] = useState<'neutral' | 'bravo' | 'correction' | 'celebration'>('neutral');
 
   const hanzi = HANZI_SET[currentIndex % HANZI_SET.length];
 
-  const endGame = useCallback(() => {
-    setGameOver(true);
-    saveGameScore({
-      game_slug: 'hanzi-master',
-      score,
-      honor_earned: honor,
-      max_combo: maxCombo,
-      stars: score >= 200 ? 3 : score >= 100 ? 2 : 1,
-      culture: 'china',
-      duration_seconds: 60,
-    });
-    addHonor(honor, 'game', 'hanzi-master');
-  }, [score, honor, maxCombo]);
-
   const handleStroke = useCallback((accuracy: number) => {
     const points = Math.round(accuracy);
-    const honorPts = accuracy >= 70 ? 10 : 0;
+    const bonusPoints = hanzi.kanjiEquiv ? 5 : 0;
 
     if (accuracy >= 70) {
       Sound.correct();
-      setCombo(p => { const n = p + 1; if (n > maxCombo) setMaxCombo(n); return n; });
+      addScore(points + bonusPoints);
       setMasterMsg('Very good. Your ink flows well.');
       setMasterExpr('bravo');
 
       if (hanzi.kanjiEquiv) {
         setShowComparison(true);
-        setHonor(p => p + 5);
         setTimeout(() => setShowComparison(false), 2000);
       }
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
       setMasterMsg('Steady your hand. Focus.');
       setMasterExpr('correction');
     }
 
-    setScore(p => p + points);
-    setHonor(p => p + honorPts);
-    setPopupScore(points + (hanzi.kanjiEquiv ? 5 : 0));
+    setPopupScore(points + bonusPoints);
     setShowPopup(true);
 
     setTimeout(() => {
@@ -92,7 +72,7 @@ export default function HanziMaster() {
       else setCurrentIndex(next);
       setMasterExpr('neutral');
     }, hanzi.kanjiEquiv ? 2500 : 800);
-  }, [maxCombo, currentIndex, hanzi, endGame]);
+  }, [currentIndex, hanzi, addScore, breakCombo, endGame]);
 
   if (!started) {
     return (
@@ -113,19 +93,19 @@ export default function HanziMaster() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
       <GameOverScreen
-        score={score} honorEarned={honor}
+        score={score} honorEarned={honorEarned}
         stars={score >= 200 ? 3 : score >= 100 ? 2 : 1}
         gameName="Hanzi Master" gameSlug="hanzi-master"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setCombo(0); setMaxCombo(0); setCurrentIndex(0); setGameOver(false); }}
+        onReplay={() => { reset(); setStarted(false); setCurrentIndex(0); }}
       />
     );
   }
 
   return (
-    <GameShell culture="china" gameName="Hanzi Master" score={score} honorPoints={honor} masterMessage={masterMsg} masterExpression={masterExpr}>
+    <GameShell culture="china" gameName="Hanzi Master" score={score} honorPoints={honorEarned} masterMessage={masterMsg} masterExpression={masterExpr}>
       <div className="flex flex-col items-center gap-4">
         <div className="text-center">
           <p className="font-noto-cn text-5xl text-dojuku-paper mb-1">{hanzi.char}</p>

@@ -4,7 +4,8 @@ import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
 import { type QuizQuestion } from '../types/game';
-import { saveGameScore, addHonor, getQuizQuestions } from '../lib/supabase';
+import { getQuizQuestions } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 const FALLBACK_QUESTIONS: QuizQuestion[] = [
   { id: '1', statement_en: 'Karate originated in Okinawa, Japan.', is_true: true, category: 'history', culture: 'japan' },
@@ -34,17 +35,14 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export default function MasterOrMyth() {
+  const { score, combo, honorEarned, isGameOver, addScore, breakCombo, endGame, reset } = useGameEngine('master-or-myth');
+
   const [started, setStarted] = useState(false);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [maxCombo, setMaxCombo] = useState(0);
   const [timeLeft, setTimeLeft] = useState(10);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [answered, setAnswered] = useState(false);
   const [lastCorrect, setLastCorrect] = useState<boolean | null>(null);
 
@@ -56,39 +54,33 @@ export default function MasterOrMyth() {
   }, []);
 
   useEffect(() => {
-    if (!started || gameOver || answered) return;
+    if (!started || isGameOver || answered) return;
     if (timeLeft <= 0) { handleAnswer(null); return; }
     const t = setTimeout(() => setTimeLeft(p => p - 1), 1000);
     return () => clearTimeout(t);
-  }, [timeLeft, started, gameOver, answered]);
+  }, [timeLeft, started, isGameOver, answered]);
 
   const handleAnswer = useCallback((answer: boolean | null) => {
     if (answered) return;
     setAnswered(true);
     const q = questions[currentIndex];
     const correct = answer === q.is_true;
-    const points = correct ? 10 * (1 + Math.min(combo, 4)) : 0;
-    const honorPts = correct ? 8 : 0;
     setLastCorrect(correct);
 
     if (correct) {
       Sound.correct();
-      setCombo(p => { const n = p + 1; if (n > maxCombo) setMaxCombo(n); return n; });
+      addScore(10);
+      setPopupScore(10);
+      setShowPopup(true);
     } else {
       Sound.wrong();
-      setCombo(0);
+      breakCombo();
     }
-
-    setScore(p => p + points);
-    setHonor(p => p + honorPts);
-    if (points > 0) { setPopupScore(points); setShowPopup(true); }
 
     setTimeout(() => {
       const next = currentIndex + 1;
       if (next >= questions.length) {
-        setGameOver(true);
-        saveGameScore({ game_slug: 'master-or-myth', score: score + points, honor_earned: honor + honorPts, max_combo: Math.max(maxCombo, combo + (correct ? 1 : 0)), stars: (score + points) >= 120 ? 3 : (score + points) >= 60 ? 2 : 1, culture: 'japan', duration_seconds: 150 });
-        addHonor(honor + honorPts, 'game', 'master-or-myth');
+        endGame();
       } else {
         setCurrentIndex(next);
         setTimeLeft(10);
@@ -96,7 +88,7 @@ export default function MasterOrMyth() {
         setLastCorrect(null);
       }
     }, 1200);
-  }, [answered, questions, currentIndex, combo, maxCombo, score, honor]);
+  }, [answered, questions, currentIndex, addScore, breakCombo, endGame]);
 
   if (!started || !questions.length) {
     return (
@@ -105,7 +97,7 @@ export default function MasterOrMyth() {
         <p className="font-dm text-sm text-dojuku-paper/60 text-center max-w-xs">
           True or false? Test your martial arts knowledge! 10 seconds per question.
         </p>
-        <button onClick={() => setStarted(true)} disabled={!questions.length}
+        <button onClick={() => { reset(); setStarted(true); }} disabled={!questions.length}
           className="rounded-lg px-8 py-3 font-outfit font-semibold text-dojuku-dark min-h-[44px] disabled:opacity-50"
           style={{ background: 'var(--gradient-fire)' }}>
           Start Quiz
@@ -114,10 +106,10 @@ export default function MasterOrMyth() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 120 ? 3 : score >= 60 ? 2 : 1} gameName="Master or Myth" gameSlug="master-or-myth"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setCombo(0); setMaxCombo(0); setCurrentIndex(0); setGameOver(false); setQuestions(shuffle(questions)); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 120 ? 3 : score >= 60 ? 2 : 1} gameName="Master or Myth" gameSlug="master-or-myth"
+        onReplay={() => { reset(); setStarted(false); setCurrentIndex(0); setQuestions(shuffle(questions)); }}
       />
     );
   }
@@ -125,10 +117,10 @@ export default function MasterOrMyth() {
   const q = questions[currentIndex];
 
   return (
-    <GameShell culture="japan" gameName="Master or Myth" score={score} honorPoints={honor} timeLeft={timeLeft} maxTime={10}>
+    <GameShell culture="japan" gameName="Master or Myth" score={score} honorPoints={honorEarned} timeLeft={timeLeft} maxTime={10}>
       <div className="flex flex-col items-center gap-6">
         <p className="font-mono text-sm text-dojuku-gold">{currentIndex + 1}/{questions.length}</p>
-        {combo >= 3 && <div className="animate-ki-energy rounded-full px-3 py-1 font-mono text-xs text-dojuku-gold">STREAK ×{combo}</div>}
+        {combo >= 3 && <div className="animate-ki-energy rounded-full px-3 py-1 font-mono text-xs text-dojuku-gold">STREAK x{combo}</div>}
 
         <div className={`rounded-xl p-6 text-center max-w-sm transition-colors ${
           lastCorrect === true ? 'bg-green-600/10 border border-green-500/30' :
@@ -151,7 +143,7 @@ export default function MasterOrMyth() {
           </div>
         ) : (
           <p className={`font-outfit text-lg ${lastCorrect ? 'text-green-400' : 'text-red-400'}`}>
-            {lastCorrect ? 'Correct!' : `Wrong — the answer is ${q.is_true ? 'True' : 'False'}`}
+            {lastCorrect ? 'Correct!' : `Wrong - the answer is ${q.is_true ? 'True' : 'False'}`}
           </p>
         )}
       </div>

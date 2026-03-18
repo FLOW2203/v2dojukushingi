@@ -5,7 +5,7 @@ import ScorePopup from '../components/games/ScorePopup';
 import GameOverScreen from '../components/games/GameOverScreen';
 import { Sound } from '../components/games/SoundManager';
 import { BELT_NAMES, BELT_COLORS, type BeltLevel } from '../types/game';
-import { saveGameScore, addHonor } from '../lib/supabase';
+import { useGameEngine } from '../hooks/useGameEngine';
 
 interface Stage {
   type: 'quiz' | 'write' | 'position';
@@ -29,59 +29,56 @@ const STAGES: Stage[] = [
 ];
 
 export default function BeltPath() {
+  const { score, honorEarned, isGameOver, addScore, endGame, reset } = useGameEngine('belt-path');
   const [started, setStarted] = useState(false);
   const [stageIndex, setStageIndex] = useState(0);
   const [beltLevel, setBeltLevel] = useState<BeltLevel>(0);
-  const [score, setScore] = useState(0);
-  const [honor, setHonor] = useState(0);
   const [showPopup, setShowPopup] = useState(false);
   const [popupScore, setPopupScore] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
   const [answered, setAnswered] = useState(false);
 
   const stage = STAGES[stageIndex];
 
-  const advance = useCallback((pts: number, honorPts: number) => {
-    setScore(p => p + pts);
-    setHonor(p => p + honorPts);
-    setPopupScore(pts);
-    if (pts > 0) setShowPopup(true);
+  const advance = useCallback((pts: number) => {
+    if (pts > 0) {
+      addScore(pts);
+      setPopupScore(pts);
+      setShowPopup(true);
+    }
 
     setTimeout(() => {
       const next = stageIndex + 1;
       if (next >= STAGES.length) {
         const newBelt = Math.min(6, beltLevel + 1) as BeltLevel;
         setBeltLevel(newBelt);
-        setGameOver(true);
-        saveGameScore({ game_slug: 'belt-path', score: score + pts, honor_earned: honor + honorPts, max_combo: 0, stars: (score + pts) >= 100 ? 3 : (score + pts) >= 50 ? 2 : 1, culture: 'japan', duration_seconds: 180 });
-        addHonor(honor + honorPts, 'game', 'belt-path');
+        endGame();
         Sound.levelUp();
       } else {
         setStageIndex(next);
         setAnswered(false);
       }
     }, 800);
-  }, [stageIndex, beltLevel, score, honor]);
+  }, [stageIndex, beltLevel, addScore, endGame]);
 
   const handleQuizAnswer = (idx: number) => {
     if (answered) return;
     setAnswered(true);
     const correct = idx === stage.correct;
-    if (correct) { Sound.correct(); advance(20, 10); }
-    else { Sound.wrong(); advance(0, 0); }
+    if (correct) { Sound.correct(); advance(20); }
+    else { Sound.wrong(); advance(0); }
   };
 
   const handlePositionAnswer = (idx: number) => {
     if (answered) return;
     setAnswered(true);
     const correct = idx === stage.positionCorrect;
-    if (correct) { Sound.correct(); advance(20, 10); }
-    else { Sound.wrong(); advance(0, 0); }
+    if (correct) { Sound.correct(); advance(20); }
+    else { Sound.wrong(); advance(0); }
   };
 
   const handleStroke = (accuracy: number) => {
-    if (accuracy >= 50) { Sound.correct(); advance(15, 8); }
-    else { Sound.wrong(); advance(5, 2); }
+    if (accuracy >= 50) { Sound.correct(); advance(15); }
+    else { Sound.wrong(); advance(5); }
   };
 
   if (!started) {
@@ -102,16 +99,16 @@ export default function BeltPath() {
     );
   }
 
-  if (gameOver) {
+  if (isGameOver) {
     return (
-      <GameOverScreen score={score} honorEarned={honor} stars={score >= 100 ? 3 : score >= 50 ? 2 : 1} gameName="Belt Path" gameSlug="belt-path"
-        onReplay={() => { setStarted(false); setScore(0); setHonor(0); setStageIndex(0); setGameOver(false); setAnswered(false); }}
+      <GameOverScreen score={score} honorEarned={honorEarned} stars={score >= 100 ? 3 : score >= 50 ? 2 : 1} gameName="Belt Path" gameSlug="belt-path"
+        onReplay={() => { reset(); setStarted(false); setStageIndex(0); setAnswered(false); }}
       />
     );
   }
 
   return (
-    <GameShell culture="japan" gameName="Belt Path" score={score} honorPoints={honor}>
+    <GameShell culture="japan" gameName="Belt Path" score={score} honorPoints={honorEarned}>
       <div className="flex flex-col items-center gap-4">
         {/* Path visualization */}
         <div className="flex gap-1 mb-2">
