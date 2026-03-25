@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .env
 *.tsbuildinfo
+
+# Claude Code session data
+.claude/session/
